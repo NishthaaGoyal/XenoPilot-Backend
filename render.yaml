@@ -1,0 +1,36 @@
+services:
+  # ── Main Backend API ─────────────────────────────────────────────────────────
+  - type: web
+    name: xenopilot-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        sync: false   # Set this manually in Render dashboard
+      - key: CHANNEL_SERVICE_URL
+        sync: false   # Will be the URL of the channel-service once deployed
+      - key: CRM_BASE_URL
+        sync: false   # Will be this service's own URL
+      - key: SEED_ON_STARTUP
+        value: "true"
+      - key: OPENAI_API_KEY
+        sync: false   # Optional – leave blank to use mock AI
+
+  # ── Channel Service ──────────────────────────────────────────────────────────
+  - type: web
+    name: xenopilot-channel-service
+    runtime: python
+    rootDir: channel-service
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: CRM_BACKEND_URL
+        sync: false   # Set to the xenopilot-backend URL after it deploys
+
+databases:
+  - name: xenopilot-db
+    databaseName: xenopilot
+    user: xenopilot
+    plan: free
