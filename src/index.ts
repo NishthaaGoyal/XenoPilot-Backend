@@ -7,7 +7,6 @@ import { campaignsRouter } from './routes/campaigns';
 import { analyticsRouter } from './routes/analytics';
 import { recommendationsRouter } from './routes/recommendations';
 import { prisma } from './lib/prisma';
-import { seed } from './seed';
 
 const app = express();
 const PORT = parseInt(process.env.PORT || '8000', 10);
@@ -32,22 +31,11 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 XenoPilot backend listening on 0.0.0.0:${PORT}`);
 });
 
-// ── Connect DB and seed in background ───────────────────────────────────────
+// ── Connect DB ───────────────────────────────────────────────────────────────
 async function initDb() {
   try {
     await prisma.$connect();
     console.log('✅ Connected to database');
-
-    if (process.env.SEED_ON_STARTUP === 'true') {
-      const count = await prisma.customer.count();
-      if (count === 0) {
-        console.log('🌱 Empty database detected — seeding...');
-        await seed();
-        console.log('✅ Seeding complete');
-      } else {
-        console.log(`ℹ️  Database has ${count} customers — skipping seed`);
-      }
-    }
   } catch (err) {
     console.error('❌ DB init error (server still running):', err);
   }

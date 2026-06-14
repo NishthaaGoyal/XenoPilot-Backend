@@ -4,115 +4,136 @@ import { faker } from '@faker-js/faker';
 
 const prisma = new PrismaClient();
 
-const CITIES = ['Mumbai', 'Delhi', 'Bangalore', 'Hyderabad', 'Chennai', 'Kolkata', 'Pune', 'Ahmedabad', 'Jaipur', 'Lucknow'];
-const CATEGORIES = ['Electronics', 'Fashion', 'Home & Kitchen', 'Sports', 'Beauty', 'Books', 'Toys', 'Grocery', 'Jewelry', 'Automotive'];
-const CHANNELS = ['email', 'whatsapp', 'sms'];
-const GENDERS = ['Male', 'Female', 'Non-binary'];
+async function main() {
+  console.log('Seeding database...');
 
-function computeHealthScore(totalSpent: number, orderCount: number, daysSincePurchase: number): { score: number; status: string } {
-  let score = 50;
-  if (totalSpent > 5000) score += 20;
-  else if (totalSpent > 2000) score += 10;
-  else if (totalSpent < 500) score -= 15;
-
-  if (orderCount > 5) score += 15;
-  else if (orderCount > 2) score += 5;
-  else score -= 10;
-
-  if (daysSincePurchase < 30) score += 15;
-  else if (daysSincePurchase < 90) score += 5;
-  else if (daysSincePurchase > 180) score -= 20;
-  else if (daysSincePurchase > 90) score -= 10;
-
-  score = Math.max(0, Math.min(100, score + (Math.random() - 0.5) * 10));
-
-  let status: string;
-  if (score >= 65) status = 'healthy';
-  else if (score >= 35) status = 'at_risk';
-  else status = 'churning';
-
-  return { score: parseFloat(score.toFixed(1)), status };
-}
-
-export async function seed(customerCount = 500): Promise<void> {
-  console.log(`🌱 Seeding ${customerCount} customers...`);
-
-  // Clear existing data (order matters due to FK constraints)
-  await prisma.event.deleteMany();
-  await prisma.communication.deleteMany();
-  await prisma.campaign.deleteMany();
+  // Clear existing data
+  await prisma.campaignEvent.deleteMany();
+  await prisma.analyticsSnapshot.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.campaign.deleteMany();
   await prisma.customer.deleteMany();
 
-  const customers = [];
+  // 1. Create 500 Customers
+  const customersData = Array.from({ length: 500 }).map(() => ({
+    name: faker.person.fullName(),
+    email: faker.internet.email(),
+    phone: faker.phone.number(),
+    city: faker.location.city(),
+    healthStatus: faker.helpers.arrayElement(['healthy', 'at_risk', 'churned']),
+    preferredChannel: faker.helpers.arrayElement(['email', 'sms', 'push']),
+    totalSpend: 0, // will calculate later
+  }));
 
-  for (let i = 0; i < customerCount; i++) {
-    const orderCount = faker.number.int({ min: 0, max: 12 });
-    const totalSpent = orderCount * faker.number.float({ min: 200, max: 3000, fractionDigits: 2 });
-    const lastPurchaseDaysAgo = faker.number.int({ min: 1, max: 365 });
-    const lastPurchaseDate = new Date(Date.now() - lastPurchaseDaysAgo * 86400 * 1000);
-    const { score, status } = computeHealthScore(totalSpent, orderCount, lastPurchaseDaysAgo);
+  console.log('Inserting Customers...');
+  await prisma.customer.createMany({ data: customersData });
+  const allCustomers = await prisma.customer.findMany();
 
-    customers.push({
-      name: faker.person.fullName(),
-      email: faker.internet.email().toLowerCase(),
-      phone: faker.phone.number(),
-      city: faker.helpers.arrayElement(CITIES),
-      age: faker.number.int({ min: 18, max: 65 }),
-      gender: faker.helpers.arrayElement(GENDERS),
-      preferred_channel: faker.helpers.arrayElement(CHANNELS),
-      total_spent: parseFloat(totalSpent.toFixed(2)),
-      last_purchase_date: orderCount > 0 ? lastPurchaseDate : null,
-      health_score: score,
-      health_status: status,
-      order_count: orderCount,
-      created_at: faker.date.past({ years: 2 }),
+  // 2. Create 2000+ Orders
+  console.log('Inserting Orders...');
+  const orderCategories = ['Electronics', 'Clothing', 'Home', 'Beauty', 'Sports'];
+  
+  for (const customer of allCustomers) {
+    // Give each customer 2 to 6 orders
+    const numOrders = faker.number.int({ min: 2, max: 6 });
+    const orders = [];
+    let totalSpend = 0;
+    let lastPurchaseDate = new Date(0);
+
+    for (let i = 0; i < numOrders; i++) {
+      const amount = faker.number.float({ min: 20, max: 500, fractionDigits: 2 });
+      const orderDate = faker.date.past({ years: 1 });
+      
+      if (orderDate > lastPurchaseDate) lastPurchaseDate = orderDate;
+      totalSpend += amount;
+
+      orders.push({
+        customerId: customer.id,
+        amount,
+        category: faker.helpers.arrayElement(orderCategories),
+        orderDate,
+      });
+    }
+
+    await prisma.order.createMany({ data: orders });
+    await prisma.customer.update({
+      where: { id: customer.id },
+      data: { totalSpend, lastPurchaseDate }
     });
   }
 
-  // Deduplicate emails
-  const seen = new Set<string>();
-  const unique = customers.filter((c) => {
-    if (seen.has(c.email)) return false;
-    seen.add(c.email);
-    return true;
-  });
+  // 3. Create Campaigns
+  console.log('Inserting Campaigns & Analytics...');
+  const campaignsToCreate = [
+    { name: 'Summer Sale Blast', channel: 'email', predictedOpenRate: 0.35, predictedClickRate: 0.12, predictedConversionRate: 0.04 },
+    { name: 'Win-Back At-Risk Users', channel: 'sms', predictedOpenRate: 0.85, predictedClickRate: 0.22, predictedConversionRate: 0.08 },
+    { name: 'VIP Exclusive Preview', channel: 'email', predictedOpenRate: 0.55, predictedClickRate: 0.25, predictedConversionRate: 0.10 },
+  ];
 
-  // Batch insert customers
-  const created = await Promise.all(
-    unique.map((c) => prisma.customer.create({ data: c }))
-  );
+  for (const c of campaignsToCreate) {
+    const campaign = await prisma.campaign.create({
+      data: {
+        name: c.name,
+        channel: c.channel,
+        status: 'active',
+        message: 'Hello, check out our latest offers!',
+        predictedOpenRate: c.predictedOpenRate,
+        predictedClickRate: c.predictedClickRate,
+        predictedConversionRate: c.predictedConversionRate,
+      }
+    });
 
-  console.log(`✅ Created ${created.length} customers`);
+    // Simulate sending to a subset of customers
+    const audience = faker.helpers.arrayElements(allCustomers, faker.number.int({ min: 200, max: 400 }));
+    let sent = 0, delivered = 0, opened = 0, clicked = 0, converted = 0;
 
-  // Create orders for each customer
-  const orders = [];
-  for (const customer of created) {
-    for (let j = 0; j < customer.order_count; j++) {
-      const orderDate = customer.last_purchase_date
-        ? new Date(new Date(customer.last_purchase_date).getTime() - j * 30 * 86400 * 1000)
-        : faker.date.past({ years: 1 });
-
-      orders.push({
-        customer_id: customer.id,
-        amount: parseFloat((customer.total_spent / Math.max(customer.order_count, 1)).toFixed(2)),
-        category: faker.helpers.arrayElement(CATEGORIES),
-        order_date: orderDate,
-      });
+    for (const user of audience) {
+      sent++;
+      await prisma.campaignEvent.create({ data: { campaignId: campaign.id, customerId: user.id, eventType: 'sent', timestamp: faker.date.recent({ days: 7 }) } });
+      
+      if (Math.random() < 0.95) {
+        delivered++;
+        await prisma.campaignEvent.create({ data: { campaignId: campaign.id, customerId: user.id, eventType: 'delivered', timestamp: faker.date.recent({ days: 7 }) } });
+        
+        if (Math.random() < c.predictedOpenRate) {
+          opened++;
+          await prisma.campaignEvent.create({ data: { campaignId: campaign.id, customerId: user.id, eventType: 'opened', timestamp: faker.date.recent({ days: 7 }) } });
+          
+          if (Math.random() < c.predictedClickRate) {
+            clicked++;
+            await prisma.campaignEvent.create({ data: { campaignId: campaign.id, customerId: user.id, eventType: 'clicked', timestamp: faker.date.recent({ days: 7 }) } });
+            
+            if (Math.random() < c.predictedConversionRate) {
+              converted++;
+              await prisma.campaignEvent.create({ data: { campaignId: campaign.id, customerId: user.id, eventType: 'converted', timestamp: faker.date.recent({ days: 7 }) } });
+            }
+          }
+        }
+      }
     }
+
+    // Create AnalyticsSnapshot
+    await prisma.analyticsSnapshot.create({
+      data: {
+        campaignId: campaign.id,
+        sent,
+        delivered,
+        opened,
+        clicked,
+        converted,
+        revenueGenerated: converted * faker.number.int({ min: 50, max: 200 })
+      }
+    });
   }
 
-  if (orders.length > 0) {
-    await prisma.order.createMany({ data: orders });
-    console.log(`✅ Created ${orders.length} orders`);
-  }
-
-  console.log('🎉 Seeding complete!');
+  console.log('Database seeded successfully!');
 }
 
-// Run directly if called as script
-if (require.main === module) {
-  seed()
-    .catch(console.error)
-    .finally(() => prisma.$disconnect());
-}
+main()
+  .catch((e) => {
+    console.error(e);
+    process.exit(1);
+  })
+  .finally(async () => {
+    await prisma.$disconnect();
+  });

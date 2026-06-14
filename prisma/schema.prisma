@@ -11,76 +11,67 @@ datasource db {
 }
 
 model Customer {
-  id                 String    @id @default(uuid())
-  name               String
-  email              String    @unique
-  phone              String?
-  city               String
-  age                Int
-  gender             String
-  preferred_channel  String    @default("email")
-  total_spent        Float     @default(0)
-  last_purchase_date DateTime?
-  health_score       Float     @default(50)
-  health_status      String    @default("at_risk")
-  order_count        Int       @default(0)
-  created_at         DateTime  @default(now())
+  id               String    @id @default(uuid())
+  name             String
+  email            String    @unique
+  phone            String?
+  city             String
+  healthStatus     String    @default("at_risk")
+  preferredChannel String    @default("email")
+  totalSpend       Float     @default(0)
+  lastPurchaseDate DateTime?
+  createdAt        DateTime  @default(now())
 
   orders         Order[]
-  communications Communication[]
+  campaignEvents CampaignEvent[]
 }
 
 model Order {
-  id          String   @id @default(uuid())
-  customer_id String
-  amount      Float
-  category    String
-  order_date  DateTime
+  id         String   @id @default(uuid())
+  customerId String
+  amount     Float
+  category   String
+  orderDate  DateTime
 
-  customer Customer @relation(fields: [customer_id], references: [id])
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 }
 
 model Campaign {
-  id                        String    @id @default(uuid())
-  name                      String
-  goal                      String
-  channel                   String
-  status                    String    @default("draft")
-  audience_filters          Json?
-  audience_size             Int       @default(0)
-  subject_line              String?
-  message_body              String?
-  cta                       String?
-  predicted_open_rate       Float?
-  predicted_ctr             Float?
-  predicted_conversion_rate Float?
-  prediction_confidence     Float?
-  created_at                DateTime  @default(now())
-  launched_at               DateTime?
+  id                      String   @id @default(uuid())
+  name                    String
+  audienceDescription     String?
+  message                 String?
+  channel                 String
+  predictedOpenRate       Float?
+  predictedClickRate      Float?
+  predictedConversionRate Float?
+  status                  String   @default("draft")
+  createdAt               DateTime @default(now())
 
-  communications Communication[]
+  campaignEvents    CampaignEvent[]
+  analyticsSnapshot AnalyticsSnapshot?
 }
 
-model Communication {
-  id          String   @id @default(uuid())
-  campaign_id String
-  customer_id String
-  message     String
-  channel     String
-  status      String   @default("pending")
-  created_at  DateTime @default(now())
-  updated_at  DateTime @updatedAt
+model CampaignEvent {
+  id         String   @id @default(uuid())
+  campaignId String
+  customerId String
+  eventType  String
+  timestamp  DateTime @default(now())
 
-  campaign Campaign @relation(fields: [campaign_id], references: [id])
-  customer Customer @relation(fields: [customer_id], references: [id])
-  events   Event[]
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customer Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
 }
 
-model Event {
-  id               String   @id @default(uuid())
-  communication_id String
-  event_type       String
-  timestamp        DateTime @default(now())
+model AnalyticsSnapshot {
+  id               String @id @default(uuid())
+  campaignId       String @unique
+  sent             Int    @default(0)
+  delivered        Int    @default(0)
+  opened           Int    @default(0)
+  clicked          Int    @default(0)
+  converted        Int    @default(0)
+  revenueGenerated Float  @default(0)
 
-  communication Communication @relation(fields: [communication_id], references: [id])
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 }

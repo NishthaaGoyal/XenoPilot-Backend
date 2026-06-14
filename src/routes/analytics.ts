@@ -8,48 +8,43 @@ analyticsRouter.get('/:campaign_id', async (req: Request, res: Response) => {
   try {
     const { campaign_id } = req.params;
 
-    const campaign = await prisma.campaign.findUnique({ where: { id: String(campaign_id) } });
+    const campaign = await prisma.campaign.findUnique({
+      where: { id: campaign_id },
+      include: { analyticsSnapshot: true }
+    });
+
     if (!campaign) {
       res.status(404).json({ detail: 'Campaign not found' });
       return;
     }
 
-    const communications = await prisma.communication.findMany({
-      where: { campaign_id: String(campaign_id) },
-      include: { events: true, customer: { select: { city: true } } },
-    });
+    const snapshot = campaign.analyticsSnapshot || {
+      sent: 0, delivered: 0, opened: 0, clicked: 0, converted: 0, revenueGenerated: 0
+    };
 
-    const totalSent = communications.length;
-    const delivered = communications.filter((c) =>
-      ['delivered', 'opened', 'clicked'].includes(c.status),
-    ).length;
-    const opened = communications.filter((c) =>
-      ['opened', 'clicked'].includes(c.status),
-    ).length;
-    const clicked = communications.filter((c) => c.status === 'clicked').length;
-    const failed = communications.filter((c) => c.status === 'failed').length;
-    const converted = Math.floor(clicked * 0.35); // estimate conversions from clicks
-
-    const cityBreakdown: Record<string, number> = {};
-    for (const c of communications) {
-      const city = c.customer.city;
-      cityBreakdown[city] = (cityBreakdown[city] || 0) + 1;
-    }
+    const totalSent = snapshot.sent;
 
     // Build event timeline (hourly buckets for last 24h)
     const timeline: { time: string; events: number }[] = [];
     const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    const recentEvents = await prisma.campaignEvent.findMany({
+      where: {
+        campaignId: campaign_id,
+        timestamp: { gte: twentyFourHoursAgo }
+      },
+      select: { timestamp: true }
+    });
+
     for (let h = 23; h >= 0; h--) {
       const t = new Date(now.getTime() - h * 60 * 60 * 1000);
       const label = t.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-      const count = communications.filter((c) => {
-        const created = new Date(c.created_at);
-        return Math.abs(created.getTime() - t.getTime()) < 30 * 60 * 1000;
+      const count = recentEvents.filter((e) => {
+        return Math.abs(e.timestamp.getTime() - t.getTime()) < 30 * 60 * 1000;
       }).length;
       if (count > 0) timeline.push({ time: label, events: count });
     }
-
-    const estimatedRevenue = converted * (campaign.predicted_conversion_rate ?? 0.03) * 1500;
 
     res.json({
       campaign_id,
@@ -57,17 +52,17 @@ analyticsRouter.get('/:campaign_id', async (req: Request, res: Response) => {
       channel: campaign.channel,
       status: campaign.status,
       total_sent: totalSent,
-      delivered,
-      opened,
-      clicked,
-      converted,
-      failed,
-      open_rate: totalSent > 0 ? parseFloat((opened / totalSent).toFixed(3)) : 0,
-      ctr: totalSent > 0 ? parseFloat((clicked / totalSent).toFixed(3)) : 0,
-      conversion_rate: totalSent > 0 ? parseFloat((converted / totalSent).toFixed(3)) : 0,
-      delivery_rate: totalSent > 0 ? parseFloat((delivered / totalSent).toFixed(3)) : 0,
-      estimated_revenue: parseFloat(estimatedRevenue.toFixed(2)),
-      city_breakdown: cityBreakdown,
+      delivered: snapshot.delivered,
+      opened: snapshot.opened,
+      clicked: snapshot.clicked,
+      converted: snapshot.converted,
+      failed: Math.max(0, totalSent - snapshot.delivered),
+      open_rate: totalSent > 0 ? parseFloat((snapshot.opened / totalSent).toFixed(3)) : 0,
+      ctr: totalSent > 0 ? parseFloat((snapshot.clicked / totalSent).toFixed(3)) : 0,
+      conversion_rate: totalSent > 0 ? parseFloat((snapshot.converted / totalSent).toFixed(3)) : 0,
+      delivery_rate: totalSent > 0 ? parseFloat((snapshot.delivered / totalSent).toFixed(3)) : 0,
+      estimated_revenue: parseFloat(snapshot.revenueGenerated.toFixed(2)),
+      city_breakdown: {}, // Deprecated in flat structure for performance
       event_timeline: timeline,
     });
   } catch (err) {
