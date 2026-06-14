@@ -1,4 +1,13 @@
-__pycache__/
-venv/
+# XenoPilot Backend (Node.js)
+
+node_modules/
+dist/
 .env
-*.pyc
+*.log
+.DS_Store
+backend/
+channel-service/
+render.yaml
+docker-compose.yml
+supabase_schema.sql
+backend/

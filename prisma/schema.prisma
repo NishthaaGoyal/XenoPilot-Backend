@@ -1,0 +1,86 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id                 String    @id @default(uuid())
+  name               String
+  email              String    @unique
+  phone              String?
+  city               String
+  age                Int
+  gender             String
+  preferred_channel  String    @default("email")
+  total_spent        Float     @default(0)
+  last_purchase_date DateTime?
+  health_score       Float     @default(50)
+  health_status      String    @default("at_risk")
+  order_count        Int       @default(0)
+  created_at         DateTime  @default(now())
+
+  orders         Order[]
+  communications Communication[]
+}
+
+model Order {
+  id          String   @id @default(uuid())
+  customer_id String
+  amount      Float
+  category    String
+  order_date  DateTime
+
+  customer Customer @relation(fields: [customer_id], references: [id])
+}
+
+model Campaign {
+  id                        String    @id @default(uuid())
+  name                      String
+  goal                      String
+  channel                   String
+  status                    String    @default("draft")
+  audience_filters          Json?
+  audience_size             Int       @default(0)
+  subject_line              String?
+  message_body              String?
+  cta                       String?
+  predicted_open_rate       Float?
+  predicted_ctr             Float?
+  predicted_conversion_rate Float?
+  prediction_confidence     Float?
+  created_at                DateTime  @default(now())
+  launched_at               DateTime?
+
+  communications Communication[]
+}
+
+model Communication {
+  id          String   @id @default(uuid())
+  campaign_id String
+  customer_id String
+  message     String
+  channel     String
+  status      String   @default("pending")
+  created_at  DateTime @default(now())
+  updated_at  DateTime @updatedAt
+
+  campaign Campaign @relation(fields: [campaign_id], references: [id])
+  customer Customer @relation(fields: [customer_id], references: [id])
+  events   Event[]
+}
+
+model Event {
+  id               String   @id @default(uuid())
+  communication_id String
+  event_type       String
+  timestamp        DateTime @default(now())
+
+  communication Communication @relation(fields: [communication_id], references: [id])
+}
