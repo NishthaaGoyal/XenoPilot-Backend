@@ -8,9 +8,5 @@ if (databaseUrl && databaseUrl.includes('pooler.supabase.com') && !databaseUrl.i
 // Singleton Prisma instance
 export const prisma = new PrismaClient({
   log: process.env.NODE_ENV === 'development' ? ['query', 'error'] : ['error'],
-  datasources: {
-    db: {
-      url: databaseUrl
-    }
-  }
+  ...(databaseUrl ? { datasources: { db: { url: databaseUrl } } } : {})
 });
