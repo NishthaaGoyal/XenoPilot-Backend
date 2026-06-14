@@ -1,23 +1,15 @@
-FROM node:18
-
+FROM node:18-alpine
 WORKDIR /app
 
-# Install dependencies
-COPY package.json package-lock.json ./
+# Install dependencies and generate Prisma client properly
+COPY package*.json ./
+COPY prisma ./prisma/
 RUN npm install
-
-# Copy source code and Prisma schema
-COPY . .
-
-# Generate Prisma client
 RUN npx prisma generate
 
-# Compile TypeScript to plain JavaScript
+# Copy application source and build
+COPY . .
 RUN npx tsc
 
-# Hardcode port mapping for Railway
-ENV PORT=8000
-EXPOSE 8000
-
-# Start the application using raw Node.js (fastest and most reliable)
+# Start the application
 CMD ["node", "dist/index.js"]
