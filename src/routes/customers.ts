@@ -7,25 +7,50 @@ export const customersRouter = Router();
 // GET /customers/stats
 customersRouter.get('/stats', async (_req: Request, res: Response) => {
   try {
-    const totalCustomers = await prisma.customer.count();
-    const healthyCount = await prisma.customer.count({ where: { healthStatus: 'healthy' } });
-    const atRiskCount = await prisma.customer.count({ where: { healthStatus: 'at_risk' } });
-    const churningCount = await prisma.customer.count({ where: { healthStatus: 'churning' } });
+    const [
+      totalCustomers,
+      healthyCount,
+      atRiskCount,
+      churningCount,
+      orderAgg,
+      customerAgg,
+      repeatCount,
+    ] = await Promise.all([
+      prisma.customer.count(),
+      prisma.customer.count({ where: { healthStatus: 'healthy' } }),
+      prisma.customer.count({ where: { healthStatus: 'at_risk' } }),
+      prisma.customer.count({ where: { healthStatus: 'churning' } }),
+      prisma.order.aggregate({ _sum: { amount: true }, _count: { id: true }, _avg: { amount: true } }),
+      prisma.customer.aggregate({ _sum: { totalSpend: true } }),
+      prisma.customer.count({ where: { orders: { some: {} } } }),
+    ]);
 
-    const aggregates = await prisma.customer.aggregate({
-      _sum: { totalSpend: true },
-    });
+    const totalRevenue = Number(customerAgg._sum.totalSpend) || 0;
+    const totalOrders  = orderAgg._count.id || 0;
+    const avgOrderValue = totalOrders > 0 ? (Number(orderAgg._sum.amount) || 0) / totalOrders : 0;
+
+    // Generate a simple rule-based AI insight
+    const atRiskPct = totalCustomers > 0 ? ((atRiskCount / totalCustomers) * 100).toFixed(0) : 0;
+    const aiInsight = atRiskCount > 0
+      ? `${atRiskPct}% of your customers are at risk of churning. Consider launching a personalised re-engagement campaign targeting this segment to recover potential revenue.`
+      : `Great news — your customer base looks healthy! Focus on rewarding your ${healthyCount} healthy customers to boost lifetime value.`;
 
     res.json({
       total_customers: totalCustomers,
       active_customers: healthyCount,
-      total_revenue: aggregates._sum.totalSpend || 0,
-      recent_engagement: Math.floor(healthyCount * 0.4), // mock for UI
+      healthy_customers: healthyCount,
+      at_risk_customers: atRiskCount,
+      churning_customers: churningCount,
+      repeat_customers: repeatCount,
+      total_revenue: totalRevenue,
+      avg_order_value: avgOrderValue,
+      recent_engagement: Math.floor(healthyCount * 0.4),
+      ai_insight: aiInsight,
       health_distribution: {
         healthy: healthyCount,
         at_risk: atRiskCount,
-        churning: churningCount
-      }
+        churning: churningCount,
+      },
     });
   } catch (err) {
     console.error(err);
@@ -58,10 +83,19 @@ customersRouter.get('/revenue-trend', async (req: Request, res: Response) => {
       monthlyRevenue[monthYear] = (monthlyRevenue[monthYear] || 0) + order.amount;
     }
 
-    const labels = Object.keys(monthlyRevenue).sort();
-    const data = labels.map((l) => monthlyRevenue[l]);
+    const monthlyData: Record<string, { revenue: number; orders: number }> = {};
+    for (const order of orders) {
+      const monthYear = order.orderDate.toLocaleString('en-US', { month: 'short', year: '2-digit' });
+      if (!monthlyData[monthYear]) monthlyData[monthYear] = { revenue: 0, orders: 0 };
+      monthlyData[monthYear].revenue += order.amount;
+      monthlyData[monthYear].orders += 1;
+    }
 
-    res.json({ labels, data });
+    const result = Object.entries(monthlyData)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, d]) => ({ month, revenue: Math.round(d.revenue), orders: d.orders }));
+
+    res.json(result);
   } catch (err) {
     console.error(err);
     res.status(500).json({ detail: 'Failed to fetch revenue trend' });
