@@ -3,9 +3,12 @@
   "version": "1.0.0",
   "description": "XenoPilot CRM Backend — Node.js + Express + Prisma",
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "scripts": {
     "build": "tsc",
-    "start": "ts-node --transpile-only src/index.ts",
+    "start": "node -r ts-node/register src/index.ts",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "seed": "ts-node src/seed.ts",
     "db:push": "prisma db push",
