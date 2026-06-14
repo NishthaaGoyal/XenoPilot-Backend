@@ -10,9 +10,9 @@ recommendationsRouter.get('/:campaign_id', async (req: Request, res: Response) =
     const { campaign_id } = req.params;
 
     const campaign = await prisma.campaign.findUnique({
-      where: { id: campaign_id },
+      where: { id: String(campaign_id) },
       include: { analyticsSnapshot: true }
-    });
+    }) as any;
 
     if (!campaign) {
       res.status(404).json({ detail: 'Campaign not found' });

@@ -21,36 +21,33 @@ audiencesRouter.post('/generate', async (req: Request, res: Response) => {
     for (const f of filters) {
       const val = f.value;
       if (f.field === 'health_status') {
-        where.health_status = { equals: String(val) };
+        where.healthStatus = { equals: String(val) };
       } else if (f.field === 'preferred_channel') {
-        where.preferred_channel = { equals: String(val) };
+        where.preferredChannel = { equals: String(val) };
       } else if (f.field === 'city') {
         where.city = { equals: String(val) };
-      } else if (f.field === 'gender') {
-        where.gender = { equals: String(val) };
-      } else if (['total_spent', 'age', 'order_count', 'health_score'].includes(f.field)) {
+      } else if (f.field === 'total_spent') {
         const numVal = Number(val);
-        const prismaField = f.field as 'total_spent' | 'age' | 'order_count' | 'health_score';
-        if (f.operator === 'gt') (where as any)[prismaField] = { gt: numVal };
-        else if (f.operator === 'gte') (where as any)[prismaField] = { gte: numVal };
-        else if (f.operator === 'lt') (where as any)[prismaField] = { lt: numVal };
-        else if (f.operator === 'lte') (where as any)[prismaField] = { lte: numVal };
-        else if (f.operator === 'eq') (where as any)[prismaField] = { equals: numVal };
+        if (f.operator === 'gt') where.totalSpend = { gt: numVal };
+        else if (f.operator === 'gte') where.totalSpend = { gte: numVal };
+        else if (f.operator === 'lt') where.totalSpend = { lt: numVal };
+        else if (f.operator === 'lte') where.totalSpend = { lte: numVal };
+        else if (f.operator === 'eq') where.totalSpend = { equals: numVal };
       }
     }
 
     const customers = await prisma.customer.findMany({
       where,
       take: 500,
-      orderBy: { total_spent: 'desc' },
+      orderBy: { totalSpend: 'desc' },
     });
 
     // Compute metrics
-    const totalSpent = customers.reduce((s, c) => s + c.total_spent, 0);
+    const totalSpent = customers.reduce((s, c) => s + c.totalSpend, 0);
     const avgSpend = customers.length > 0 ? totalSpent / customers.length : 0;
     const daysSincePurchase = customers.map((c) => {
-      if (!c.last_purchase_date) return 180;
-      const diff = (Date.now() - new Date(c.last_purchase_date).getTime()) / (1000 * 60 * 60 * 24);
+      if (!c.lastPurchaseDate) return 180;
+      const diff = (Date.now() - new Date(c.lastPurchaseDate).getTime()) / (1000 * 60 * 60 * 24);
       return Math.floor(diff);
     });
     const avgDays =
@@ -62,12 +59,12 @@ audiencesRouter.post('/generate', async (req: Request, res: Response) => {
     const channelBreakdown: Record<string, number> = {};
     for (const c of customers) {
       cityBreakdown[c.city] = (cityBreakdown[c.city] || 0) + 1;
-      channelBreakdown[c.preferred_channel] = (channelBreakdown[c.preferred_channel] || 0) + 1;
+      channelBreakdown[c.preferredChannel] = (channelBreakdown[c.preferredChannel] || 0) + 1;
     }
 
     const recoverableRevenue = customers
-      .filter((c) => c.health_status !== 'healthy')
-      .reduce((s, c) => s + c.total_spent * 0.3, 0);
+      .filter((c) => c.healthStatus !== 'healthy')
+      .reduce((s, c) => s + c.totalSpend * 0.3, 0);
 
     res.json({
       query,
@@ -82,7 +79,13 @@ audiencesRouter.post('/generate', async (req: Request, res: Response) => {
         city_breakdown: cityBreakdown,
         channel_breakdown: channelBreakdown,
       },
-      customers,
+      customers: customers.map(c => ({
+        ...c,
+        total_spent: c.totalSpend,
+        health_status: c.healthStatus,
+        last_purchase_date: c.lastPurchaseDate,
+        preferred_channel: c.preferredChannel
+      })) // Map back to snake_case for frontend
     });
   } catch (err) {
     console.error(err);

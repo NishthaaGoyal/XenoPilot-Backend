@@ -143,10 +143,10 @@ campaignsRouter.post('/launch', async (req: Request, res: Response) => {
     });
 
     res.json({
+      ...updated,
       message: `Campaign launched to ${customers.length} customers`,
       campaign_id,
       sent: customers.length,
-      ...updated,
     });
   } catch (err) {
     console.error(err);
