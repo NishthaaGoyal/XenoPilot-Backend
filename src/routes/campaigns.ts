@@ -159,19 +159,28 @@ campaignsRouter.get('/', async (_req: Request, res: Response) => {
   try {
     const campaigns = await prisma.campaign.findMany({
       orderBy: { createdAt: 'desc' },
-      include: {
-        analyticsSnapshot: true,
-      },
+      include: { analyticsSnapshot: true },
     });
 
     const result = campaigns.map((c) => ({
-      ...c,
+      id: c.id,
+      name: c.name,
+      goal: (c as any).goal || '',
+      channel: c.channel,
+      status: c.status,
+      audience_size: c.analyticsSnapshot?.sent || 0,
+      subject_line: (c as any).subjectLine || null,
+      message_body: c.message || null,
+      cta: (c as any).cta || null,
+      predicted_open_rate: c.predictedOpenRate || null,
+      predicted_ctr: c.predictedClickRate || null,
+      predicted_conversion_rate: c.predictedConversionRate || null,
+      prediction_confidence: null,
       sent: c.analyticsSnapshot?.sent || 0,
       created_at: c.createdAt,
-      status: c.status,
-      channel: c.channel,
-      name: c.name,
-      id: c.id
+      launched_at: c.status === 'active' ? c.createdAt : null,
+      // keep camel case originals too in case any other consumer needs them
+      analyticsSnapshot: c.analyticsSnapshot,
     }));
 
     res.json(result);
