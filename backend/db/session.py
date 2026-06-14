@@ -6,7 +6,12 @@ settings = get_settings()
 
 # Use SSL in production if connected to a remote DB (like Supabase)
 is_production = "supabase.com" in settings.database_url or "onrender.com" in settings.database_url
-connect_args = {"ssl": True} if is_production else {}
+connect_args = {
+    "ssl": True,
+    # Supavisor transaction pooler does not support prepared statements
+    "prepared_statement_cache_size": 0,
+    "statement_cache_size": 0
+} if is_production else {}
 
 engine = create_async_engine(
     settings.database_url,
