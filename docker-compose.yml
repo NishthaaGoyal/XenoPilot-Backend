@@ -1,0 +1,64 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: xenopilot-postgres
+    environment:
+      POSTGRES_DB: xenopilot
+      POSTGRES_USER: xenopilot
+      POSTGRES_PASSWORD: xenopilot123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xenopilot -d xenopilot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: xenopilot-backend
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://xenopilot:xenopilot123@postgres:5432/xenopilot
+      CHANNEL_SERVICE_URL: http://channel-service:8001
+      CRM_BASE_URL: http://backend:8000
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      SEED_ON_STARTUP: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  channel-service:
+    build:
+      context: ./channel-service
+      dockerfile: Dockerfile
+    container_name: xenopilot-channel-service
+    ports:
+      - "8001:8001"
+    environment:
+      CRM_WEBHOOK_URL: http://backend:8000/webhooks/events
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: xenopilot-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
