@@ -8,19 +8,24 @@ export const customersRouter = Router();
 customersRouter.get('/stats', async (_req: Request, res: Response) => {
   try {
     const totalCustomers = await prisma.customer.count();
-    const activeCustomers = await prisma.customer.count({
-      where: { healthStatus: 'healthy' },
-    });
-    
+    const healthyCount = await prisma.customer.count({ where: { healthStatus: 'healthy' } });
+    const atRiskCount = await prisma.customer.count({ where: { healthStatus: 'at_risk' } });
+    const churningCount = await prisma.customer.count({ where: { healthStatus: 'churning' } });
+
     const aggregates = await prisma.customer.aggregate({
       _sum: { totalSpend: true },
     });
 
     res.json({
       total_customers: totalCustomers,
-      active_customers: activeCustomers,
+      active_customers: healthyCount,
       total_revenue: aggregates._sum.totalSpend || 0,
-      recent_engagement: Math.floor(activeCustomers * 0.4), // mock for UI
+      recent_engagement: Math.floor(healthyCount * 0.4), // mock for UI
+      health_distribution: {
+        healthy: healthyCount,
+        at_risk: atRiskCount,
+        churning: churningCount
+      }
     });
   } catch (err) {
     console.error(err);
