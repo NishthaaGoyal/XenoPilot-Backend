@@ -89,63 +89,55 @@ campaignsRouter.post('/launch', async (req: Request, res: Response) => {
       return;
     }
 
-    // Since we don't have exact JSON filters anymore, we'll just grab the first 100 at_risk customers
     const customers = await prisma.customer.findMany({
       where: { healthStatus: 'at_risk' },
       take: 100,
+      select: { id: true },
     });
 
-    // We will simulate the launch by inserting CampaignEvents and creating an AnalyticsSnapshot
+    // Build all events in memory first, then bulk-insert in ONE DB call
+    const events: { campaignId: string; customerId: string; eventType: string }[] = [];
     let sent = 0, delivered = 0, opened = 0, clicked = 0, converted = 0;
-    
-    // Batch create events
+
     for (const customer of customers) {
       sent++;
-      await prisma.campaignEvent.create({ data: { campaignId: campaign.id, customerId: customer.id, eventType: 'sent' } });
-      
-      const r = Math.random();
-      if (r < 0.9) {
+      events.push({ campaignId: campaign.id, customerId: customer.id, eventType: 'sent' });
+
+      if (Math.random() < 0.9) {
         delivered++;
-        await prisma.campaignEvent.create({ data: { campaignId: campaign.id, customerId: customer.id, eventType: 'delivered' } });
+        events.push({ campaignId: campaign.id, customerId: customer.id, eventType: 'delivered' });
         if (Math.random() < 0.45) {
           opened++;
-          await prisma.campaignEvent.create({ data: { campaignId: campaign.id, customerId: customer.id, eventType: 'opened' } });
+          events.push({ campaignId: campaign.id, customerId: customer.id, eventType: 'opened' });
           if (Math.random() < 0.25) {
             clicked++;
-            await prisma.campaignEvent.create({ data: { campaignId: campaign.id, customerId: customer.id, eventType: 'clicked' } });
+            events.push({ campaignId: campaign.id, customerId: customer.id, eventType: 'clicked' });
             if (Math.random() < 0.35) {
               converted++;
-              await prisma.campaignEvent.create({ data: { campaignId: campaign.id, customerId: customer.id, eventType: 'converted' } });
+              events.push({ campaignId: campaign.id, customerId: customer.id, eventType: 'converted' });
             }
           }
         }
       }
     }
 
-    // Update campaign status
-    const updated = await prisma.campaign.update({
-      where: { id: campaign_id },
-      data: { status: 'active' },
-    });
-
-    // Create Snapshot
+    // Single bulk insert + status update + snapshot — all in parallel
     const revenueGenerated = converted * (campaign.predictedConversionRate ?? 0.03) * 1500;
-    await prisma.analyticsSnapshot.create({
-      data: {
-        campaignId: campaign.id,
-        sent,
-        delivered,
-        opened,
-        clicked,
-        converted,
-        revenueGenerated
-      }
-    });
+
+    await Promise.all([
+      prisma.campaignEvent.createMany({ data: events, skipDuplicates: true }),
+      prisma.campaign.update({ where: { id: campaign_id }, data: { status: 'active' } }),
+      prisma.analyticsSnapshot.upsert({
+        where: { campaignId: campaign.id },
+        create: { campaignId: campaign.id, sent, delivered, opened, clicked, converted, revenueGenerated },
+        update: { sent, delivered, opened, clicked, converted, revenueGenerated },
+      }),
+    ]);
 
     res.json({
-      ...updated,
-      message: `Campaign launched to ${customers.length} customers`,
       campaign_id,
+      status: 'active',
+      message: `Campaign launched to ${customers.length} customers`,
       sent: customers.length,
     });
   } catch (err) {
