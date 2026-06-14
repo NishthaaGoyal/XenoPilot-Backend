@@ -15,8 +15,5 @@ RUN npx prisma generate
 # Compile TypeScript to plain JavaScript
 RUN npx tsc
 
-# Expose the port Railway will use
-EXPOSE 8000
-
 # Start the application using raw Node.js (fastest and most reliable)
 CMD ["node", "dist/index.js"]
