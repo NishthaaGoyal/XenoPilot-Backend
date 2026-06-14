@@ -1,4 +1,4 @@
-FROM node:18-alpine
+FROM node:18
 WORKDIR /app
 
 # Install dependencies and generate Prisma client properly
